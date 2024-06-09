@@ -2,7 +2,7 @@ import socket
 import stun
 
 
-class CasperPeer:
+class PunchyPeer:
     def __init__(self, port: int):
         self.open        = False
         self.remote_host = ('', '')
@@ -31,5 +31,5 @@ class CasperPeer:
 
 
 __all__ = [
-    'CasperPeer'
+    'PunchyPeer'
 ]
