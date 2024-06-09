@@ -1,4 +1,13 @@
+import threading
+
+from core.firewall import PunchyFirewall
+from core.daemon import PunchyDaemon
+from threading import Thread
+
+from queue import Queue
+
 import socket
+import base64
 import stun
 
 
@@ -11,23 +20,71 @@ class PunchyPeer:
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._sock.bind(("0.0.0.0", port))
-
-    async def connect_to_peer(self, token: str):
-        print('Connecting to stun...')
-        nat_type, nat = stun.get_nat_type(
-            s           = self._sock,
-            source_ip   = "0.0.0.0",
-            source_port = self._port,
-            stun_host   = 'stun.l.google.com',
-            stun_port   = 19302,
+        # init the daemon
+        self.daemon = PunchyDaemon(
+            firewall = PunchyFirewall(),
+            sock     = self._sock,
+            port     = port,
         )
-        external_ip, external_port = nat['ExternalIP'], nat['ExternalPort']
-        print(f"Peer with nat: {nat_type}. Remote Address: {external_ip}:{external_port}")
-        remote_peer_ip, remote_peer_port = input("Enter address of remote peer: ").split(":")
-        self.remote_host = (remote_peer_ip, int(remote_peer_port))
 
+    #
+    # DAEMON IFACE
+    #
+    def deploy(self):
+        print('Daemon is starting...')
+        nat_type, external_ip, external_port = self.daemon.get_remote_info()
+        token = self.encode_token(external_ip, external_port)
+        print(f'Your device is using {nat_type}. Your token is: {token}')
+        thread = Thread(
+            target = self.daemon.start,
+            name   = 'PunchyPeerDaemon',
+            daemon = True,
+        )
+        self.daemon.thread = thread
+        thread.start()
+
+    @staticmethod
+    def encode_token(ip: str, port: int):
+        return ip + ':' + str(port)
+
+    @staticmethod
+    def decode_token(token: str):
+        return token.split(':')
+
+    def set_target(self, token: str):
+        self.daemon.set_token(token)
+
+    def pause(self):
+        self.daemon.pause = True
+
+    def unpause(self):
+        self.daemon.pause = False
+
+    def kill(self):
+        self.daemon.kill = True
+
+    #
+    # SELF IFACE
+    #
     async def send(self, data: bytes):
-        self._sock.sendto(data, (self.remote_host, self._port))
+        self.daemon.add_task(
+            {
+                'type'     : 'send',
+                'data'     : data
+            }
+        )
+
+    async def send_text(self, data: str):
+        self.daemon.add_task(
+            {
+                'type'     : 'send_text',
+                'data'     : data
+            }
+        )
+
+    def __del__(self):
+        self._sock.close()
+        self.kill()
 
 
 __all__ = [

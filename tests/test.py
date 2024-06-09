@@ -4,4 +4,4 @@ import pytest
 
 
 def test_class_creation():
-    peer.CasperPeer(port=8888)
+    peer.PunchyPeer(port=8888)
